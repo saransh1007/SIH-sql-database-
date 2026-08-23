@@ -37,12 +37,7 @@ CREATE TABLE IF NOT EXISTS doctors (
     CONSTRAINT chk_doctor_phone_digits CHECK (phone IS NULL OR phone REGEXP '^[0-9]{10,15}$')
 ) ENGINE=InnoDB;
 
--- Do not put passwords in this table.  Let Python authenticate users securely
--- (hashed passwords, environment variables, or a proper identity service).
 
--- ---------------------------------------------------------------------------
--- 2. Long-term patient history (add rows as the prototype grows)
--- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS patient_medical_history (
     history_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     patient_id          BIGINT UNSIGNED NOT NULL,
@@ -73,9 +68,6 @@ CREATE TABLE IF NOT EXISTS patient_allergies (
         REFERENCES patients(patient_id) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
--- ---------------------------------------------------------------------------
--- 3. A visit is created when the patient presses "Submit & Generate Token".
--- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS daily_token_counter (
     token_date          DATE NOT NULL,
     last_token          INT UNSIGNED NOT NULL,
@@ -105,8 +97,6 @@ CREATE TABLE IF NOT EXISTS visits (
         REFERENCES doctors(doctor_id) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
--- A visit can have typed symptoms, voice-to-text symptoms, or both.  Keeping
--- them as separate rows makes it simple to add more symptom input methods later.
 CREATE TABLE IF NOT EXISTS visit_symptoms (
     symptom_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     visit_id            BIGINT UNSIGNED NOT NULL,
@@ -119,7 +109,7 @@ CREATE TABLE IF NOT EXISTS visit_symptoms (
         REFERENCES visits(visit_id) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
--- Metadata for PDF/JPG/PNG prescriptions uploaded in the patient screen.
+
 CREATE TABLE IF NOT EXISTS prescription_uploads (
     upload_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     patient_id          BIGINT UNSIGNED NOT NULL,
@@ -140,8 +130,6 @@ CREATE TABLE IF NOT EXISTS prescription_uploads (
         REFERENCES visits(visit_id) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
--- Doctor's concise output for a two-minute consultation.  The application can
--- generate a draft summary, but a doctor should always review it before saving.
 CREATE TABLE IF NOT EXISTS consultation_summaries (
     summary_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     visit_id            BIGINT UNSIGNED NOT NULL,
@@ -158,9 +146,7 @@ CREATE TABLE IF NOT EXISTS consultation_summaries (
         REFERENCES visits(visit_id) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
--- ---------------------------------------------------------------------------
--- 4. Useful doctor dashboard views.  Use SELECT * FROM these in Python.
--- ---------------------------------------------------------------------------
+
 CREATE OR REPLACE VIEW vw_doctor_patient_search AS
 SELECT
     p.patient_id, p.registration_id, p.phone, p.full_name, p.date_of_birth,
@@ -196,12 +182,8 @@ LEFT JOIN visit_symptoms AS s ON s.visit_id = v.visit_id
 LEFT JOIN consultation_summaries AS cs ON cs.visit_id = v.visit_id
 GROUP BY p.patient_id, p.registration_id, p.full_name, p.phone,
          v.visit_id, v.visit_date, v.token_code, v.status,
-         cs.illness_summary, cs.diagnosis, cs.treatment_plan, cs.follow_up_on;
-
--- ---------------------------------------------------------------------------
--- 5. Procedures used by Python.  Parameter names beginning with p_ are inputs;
--- names beginning with o_ are outputs.
--- ---------------------------------------------------------------------------
+         cs.illness_summary, cs.diagnosis, cs.treatment_plan, cs.
+  
 DELIMITER $$
 
 CREATE PROCEDURE sp_submit_patient_visit(
@@ -328,25 +310,3 @@ END$$
 
 DELIMITER ;
 
--- ---------------------------------------------------------------------------
--- 6. First-run examples.  Delete these comments only if you want test data.
--- ---------------------------------------------------------------------------
--- INSERT INTO doctors (doctor_code, full_name, speciality, phone)
--- VALUES ('DOC-001', 'Dr. Sharma', 'AYUSH General Medicine', '9876543210');
---
--- CALL sp_submit_patient_visit(
---   '9123456789', 'Aarav Kumar', '1995-04-12', 'MALE',
---   'Fever and headache for two days', 'TYPED', 'Hindi',
---   @patient_id, @registration_id, @visit_id, @token_code
--- );
--- SELECT @patient_id, @registration_id, @visit_id, @token_code;
---
--- Doctor search (use ? placeholders in Python, never build SQL with strings):
--- SELECT * FROM vw_doctor_patient_search
--- WHERE phone = '9123456789' OR registration_id = 'AYU-00000001';
--- SELECT * FROM vw_patient_timeline WHERE patient_id = 1;
--- SELECT * FROM vw_waiting_tokens ORDER BY created_at;
---
--- To "remove" history or an allergy, prefer marking it inactive instead of
--- deleting clinical data: UPDATE patient_medical_history SET is_current = FALSE
--- WHERE history_id = 1;  Audit requirements can be added later if needed.
